@@ -96,8 +96,10 @@ def main():
     # 1, 读取数据：读取src和dst文本文件，转成list数据
     read_data(opt)
     # 2, 创建field：创建src和dst的field，并创建vocab
-    SRC, TRG = create_fields(opt)  #
+    SRC, TRG = create_fields(opt)
+    # 3, 创建dataset：创建src和dst的dataset
     opt.train = create_dataset(opt, SRC, TRG)
+    # 4, 创建model：创建transformer模型
     model = get_model(opt, len(SRC.vocab), len(TRG.vocab))
 
     opt.optimizer = torch.optim.Adam(model.parameters(), lr=opt.lr, betas=(0.9, 0.98), eps=1e-9)

@@ -54,7 +54,7 @@ def create_fields(opt):
     t_src = tokenize(opt.src_lang)  # 加载分词模型，创建src 分词器
     t_trg = tokenize(opt.trg_lang)  # 加载分词模型，创建trg 分词器
 
-    # 创建field，用来对数据进行预处理，比如分词、去停用词、词干化等。
+    # 创建field，用来对数据进行预处理，比如分词、去停用词、添加特殊标记（如起始标记 <sos> 和结束标记 <eos>）、词干化等。
     TRG = data.Field(lower=True, tokenize=t_trg.tokenizer, init_token='<sos>', eos_token='<eos>')
     SRC = data.Field(lower=True, tokenize=t_src.tokenizer)
 
@@ -76,29 +76,52 @@ def create_fields(opt):
     return(SRC, TRG)
 
 def create_dataset(opt, SRC, TRG):
+    """
 
+    Parameters
+    ----------
+    opt
+    SRC: src data.Field
+    TRG: trg data.Field
+
+    Returns: dataset and iterator
+    -------
+
+    """
     print("creating dataset and iterator... ")
 
+    # {src: list of raw text, trg: list of raw text}
     raw_data = {'src' : [line for line in opt.src_data], 'trg': [line for line in opt.trg_data]}
+    # 创建dataframe: 两列，分别对应src和trg
     df = pd.DataFrame(raw_data, columns=["src", "trg"])
-    
+
+    # 删除src和trg长度都超过max_strlen的数据
+    # 该代码通过统计空格数量创建布尔掩码，筛选出源文本和译文空格数均小于max_strlen的数据行（空格数+1≈单词数），用于过滤超长文本。
     mask = (df['src'].str.count(' ') < opt.max_strlen) & (df['trg'].str.count(' ') < opt.max_strlen)
+    # 将满足条件的数据行保留在DataFrame中，并删除不满足条件的数据行。
     df = df.loc[mask]
 
+    # src raw text and trg raw text保存到本地csv文件
     df.to_csv("translate_transformer_temp.csv", index=False)
-    
-    data_fields = [('src', SRC), ('trg', TRG)]
-    train = data.TabularDataset('./translate_transformer_temp.csv', format='csv', fields=data_fields)
 
-    train_iter = MyIterator(train, batch_size=opt.batchsize, device=opt.device,
+    # 创建src和trg的dataset
+    data_fields = [('src', SRC), ('trg', TRG)]
+    train_dataset = data.TabularDataset('./translate_transformer_temp.csv', format='csv', fields=data_fields)
+
+    # 创建batch iterator
+    # sort_key：对数据集进行排序，排序规则为按照src和trg的长度进行排序。这可能用于动态批处理，将相似长度的样本放在同一批次，减少填充。
+    # 双长度排序的机制是：先按源语句长度排序，长度相同时再按目标语句长度排序。这种双重排序可有效减少同一batch内不同样本的填充量，提升GPU计算效率。
+    # batch_size_fn：自定义batch大小函数，该函数用于动态调整batch大小，根据每个样本的长度进行计算。
+    train_iter = MyIterator(dataset=train_dataset, batch_size=opt.batchsize, device=opt.device,  # batchsize=1500
                         repeat=False, sort_key=lambda x: (len(x.src), len(x.trg)),
                         batch_size_fn=batch_size_fn, train=True, shuffle=True)
     
     os.remove('translate_transformer_temp.csv')
 
+    # 如果没有预训练权重，则构建词汇表，保存分词器
     if opt.load_weights is None:
-        SRC.build_vocab(train)  # 构建词汇表
-        TRG.build_vocab(train)
+        SRC.build_vocab(train_dataset)  # train构建词汇表
+        TRG.build_vocab(train_dataset)
         if opt.checkpoint > 0:  # 大于0，说明需要保存权重，创建文件夹
             try:
                 os.mkdir("weights")
@@ -109,6 +132,10 @@ def create_dataset(opt, SRC, TRG):
             pickle.dump(SRC, open('weights/SRC.pkl', 'wb'))
             pickle.dump(TRG, open('weights/TRG.pkl', 'wb'))
 
+    # 获取pad的索引
+    # 设置源语言与目标语言的填充符索引
+    # 从SRC/TRG词汇表中获取'<pad>'符号对应的索引值
+    # 用于后续数据处理或模型中的序列对齐及掩码生成
     opt.src_pad = SRC.vocab.stoi['<pad>']
     opt.trg_pad = TRG.vocab.stoi['<pad>']
 
@@ -117,7 +144,7 @@ def create_dataset(opt, SRC, TRG):
     return train_iter
 
 def get_len(train):
-
+    """get train_dataset len: 多少个batch"""
     for i, b in enumerate(train):
         pass
     
