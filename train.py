@@ -67,25 +67,25 @@ def train_model(model, opt):
 def main():
 
     parser = argparse.ArgumentParser()
-    parser.add_argument('-src_data', required=True)
-    parser.add_argument('-trg_data', required=True)
-    parser.add_argument('-src_lang', required=True)
-    parser.add_argument('-trg_lang', required=True)
+    parser.add_argument('-src_data', required=True)  # src数据集路径
+    parser.add_argument('-trg_data', required=True)  # dst数据集路径
+    parser.add_argument('-src_lang', required=True)  # src语言模型，eg. en_core_web_sm
+    parser.add_argument('-trg_lang', required=True)  # dst语言模型，eg. en_core_web_sm
     parser.add_argument('-no_cuda', action='store_true')
     parser.add_argument('-SGDR', action='store_true')
     parser.add_argument('-epochs', type=int, default=2)
-    parser.add_argument('-d_model', type=int, default=512)
-    parser.add_argument('-n_layers', type=int, default=6)
-    parser.add_argument('-heads', type=int, default=8)
+    parser.add_argument('-d_model', type=int, default=512)  # 嵌入向量维度
+    parser.add_argument('-n_layers', type=int, default=6)   # transformer中编码器层数和decoder层数
+    parser.add_argument('-heads', type=int, default=8)      # 多头注意力头个数
     parser.add_argument('-dropout', type=int, default=0.1)
-    parser.add_argument('-batchsize', type=int, default=1500)
-    parser.add_argument('-printevery', type=int, default=100)
-    parser.add_argument('-lr', type=int, default=0.0001)
+    parser.add_argument('-batchsize', type=int, default=1500)  # batchsize
+    parser.add_argument('-printevery', type=int, default=100)  # 每隔多少步打印一次loss
+    parser.add_argument('-lr', type=int, default=0.0001)  # 学习率
     parser.add_argument('-load_weights')
-    parser.add_argument('-create_valset', action='store_true')
-    parser.add_argument('-max_strlen', type=int, default=80)
-    parser.add_argument('-floyd', action='store_true')
-    parser.add_argument('-checkpoint', type=int, default=0)
+    parser.add_argument('-create_valset', action='store_true')  # 是否创建验证集
+    parser.add_argument('-max_strlen', type=int, default=80)  # 最大句子长度
+    parser.add_argument('-floyd', action='store_true')  # floyd平台
+    parser.add_argument('-checkpoint', type=int, default=0)  # 保存模型权重的间隔
 
     opt = parser.parse_args()
 
@@ -93,8 +93,10 @@ def main():
     if opt.device == 'cuda':
         assert torch.cuda.is_available()
 
+    # 1, 读取数据：读取src和dst文本文件，转成list数据
     read_data(opt)
-    SRC, TRG = create_fields(opt)
+    # 2, 创建field：创建src和dst的field，并创建vocab
+    SRC, TRG = create_fields(opt)  #
     opt.train = create_dataset(opt, SRC, TRG)
     model = get_model(opt, len(SRC.vocab), len(TRG.vocab))
 

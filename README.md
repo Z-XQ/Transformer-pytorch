@@ -1,16 +1,24 @@
+original code: https://github.com/SamLynnEvans/Transformer
+
 # Transformer
 
 This is a pytorch implementation of the transformer model. If you'd like to understand the model, or any of the code better, please refer to <a href=https://towardsdatascience.com/how-to-code-the-transformer-in-pytorch-24db27c8f9ec>my tutorial</a>.
 
 Using the Europarl dataset plus the dataset in the data folder, I was able to achieve a BLEU score of 0.39 on the test set (current SOTA is around 0.42), after 4/5 days of training on a single 8gb GPU. For more results see the tutorial again.
 
-# Train the model immediately on FloydHub
 
-[![Run on FloydHub](https://static.floydhub.com/button/button-small.svg)](https://floydhub.com/run)
+# Installation
+env: nvidia rtx 2060, cuda11.7, cudnn, anaconda, python3.8
+```
+conda create -n py38 python=3.8
+conda activate py38
+pip install torch==1.9.0+cu111 torchvision==0.10.0+cu111 torchaudio==0.9.0 -f https://download.pytorch.org/whl/torch_stable.html
+pip install torchtext==0.10.0
+pip install -r custom_requirements.txt
 
-Launch a [FloydHub Workspace](https://www.floydhub.com/product/build) to start training this model with 1 click. Workspace is a GPU-enabled cloud IDE for machine learning. It provides a fully configured environment so you can start hacking right away, without worrying about dependencies, data sets, etc.
-
-Once you've started the workspace, run the 'start_here' notebook or type 'floyd run' into the workspace terminal. This will begin to train the model on the sample dataset.
+pip install spacy[cuda11x]==3.7.5 or
+pip install spacy[cuda12x]==3.7.5
+```
 
 # Usage
 
@@ -19,6 +27,8 @@ Two text files containing parallel sentences (seperated by '\n' characters) in t
 To begin training, run this code:
 ```
 python train.py -src_data path/lang1.txt -trg_data path/lang2.txt -src_lang lang1 -trg_lang lang2
+eg.
+python train.py -src_data data/english.txt -trg_data data/french.txt -src_lang en_core_web_sm -trg_lang fr_core_news_sm
 ```
 The spacy tokenizer is used to tokenize the text, hence only languages supported by spacy are supported by this program. The languages supported by Spacy and their codes are:
 
@@ -66,7 +76,3 @@ python translate.py -load_weights weights
 
 So with a small dataset of 150,000 sentences and 1 hour of training, already some quite good results...
 
-# Features still to add
-
-- create validation set and get validation scores each epoch
-- function to show translations of sentences from training and validation sets

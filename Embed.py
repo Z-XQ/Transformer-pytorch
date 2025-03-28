@@ -39,3 +39,14 @@ class PositionalEncoder(nn.Module):
             pe.cuda()
         x = x + pe
         return self.dropout(x)
+
+
+if __name__ == '__main__':
+    # 测试Embedder类
+    vocab_size = 100
+    d_model = 512
+    embedder = Embedder(vocab_size, d_model)
+    x = torch.tensor([[1, 2, 3, 4, 5, 6, 7, 8, 9, 10]])
+    print(embedder(x).shape)
+    print(embedder(x))
+    print(embedder(x).size())
