@@ -1,7 +1,7 @@
 import pandas as pd
 import torchtext
 from torchtext.legacy import data
-from Tokenize import tokenize
+from Tokenize import CustomerTokenizer
 from Batch import MyIterator, batch_size_fn
 import os
 import dill as pickle
@@ -51,12 +51,12 @@ def create_fields(opt):
     print("loading spacy tokenizers...")
 
     # 加载分词器
-    t_src = tokenize(opt.src_lang)  # 加载分词模型，创建src 分词器
-    t_trg = tokenize(opt.trg_lang)  # 加载分词模型，创建trg 分词器
+    t_src = CustomerTokenizer(opt.src_lang)  # 加载分词模型，创建src 分词器
+    t_trg = CustomerTokenizer(opt.trg_lang)  # 加载分词模型，创建trg 分词器
 
     # 创建field，用来对数据进行预处理，比如分词、去停用词、添加特殊标记（如起始标记 <sos> 和结束标记 <eos>）、词干化等。
-    TRG = data.Field(lower=True, tokenize=t_trg.tokenizer, init_token='<sos>', eos_token='<eos>')
-    SRC = data.Field(lower=True, tokenize=t_src.tokenizer)
+    TRG = data.Field(lower=True, tokenize=t_trg.tokenize, init_token='<sos>', eos_token='<eos>')
+    SRC = data.Field(lower=True, tokenize=t_src.tokenize)
 
     # 加载预训练的vocab（vocab是字典，里面包含了单词和单词的索引）
     # SRC.pkl文件是Python 的 pickle 模块序列化后保存的 Field 对象
