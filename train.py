@@ -26,7 +26,7 @@ def train_model(model, opt):
         if opt.checkpoint > 0:
             torch.save(model.state_dict(), 'weights/model_weights')
                     
-        for i, batch in enumerate(opt.train): 
+        for i, batch in enumerate(opt.train_dataset):
 
             src = batch.src.transpose(0, 1).to(opt.device)
             trg = batch.trg.transpose(0, 1).to(opt.device)
@@ -98,7 +98,7 @@ def main():
     # 2, 创建field：创建src和dst的field，并创建vocab
     SRC, TRG = create_fields(opt)
     # 3, 创建dataset：创建src和dst的dataset
-    opt.train = create_dataset(opt, SRC, TRG)
+    opt.train_dataset = create_dataset(opt, SRC, TRG)
     # 4, 创建model：创建transformer模型
     model = get_model(opt, len(SRC.vocab), len(TRG.vocab))
 
