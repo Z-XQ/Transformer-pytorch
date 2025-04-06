@@ -60,6 +60,7 @@ def create_fields(opt):
     if opt.load_weights is not None:
         try:
             print("loading presaved fields...")
+            # 该文件保存了Field对象的所有属性（包括词汇表、分词器、预处理配置等），通过Python的类实例序列化机制重建对象内存结构，确保与原始对象完全一致。
             SRC = pickle.load(open(f'{opt.load_weights}/SRC.pkl', 'rb'))  # rb: read binary
             TRG = pickle.load(open(f'{opt.load_weights}/TRG.pkl', 'rb'))
         except:
@@ -96,22 +97,21 @@ def create_dataset(opt, SRC, TRG):
     train_dataset = data.TabularDataset('./translate_transformer_temp.csv', format='csv', fields=data_fields)
 
     # 3，创建batch iterator
-
     # 双长度排序的机制是：先按源语句长度排序，长度相同时再按目标语句长度排序。这种双重排序可有效减少同一batch内不同样本的填充量，提升GPU计算效率。
-    train_iter = MyIterator(
+    train_dataset_iter = MyIterator(
         dataset=train_dataset,
-        batch_size=opt.batchsize,
-        device=opt.device,  # batchsize=1500
+        batch_size=opt.batchsize,  # batch_size=1500
+        device=opt.device,
         repeat=False,
         sort_key=lambda x: (len(x.src), len(x.trg)),  # sort_key：对数据集进行排序，排序规则为按照src和trg的长度进行排序。这可能用于动态批处理，将相似长度的样本放在同一批次，减少填充。
         batch_size_fn=batch_size_fn, train=True, shuffle=True)  # batch_size_fn：自定义batch大小函数，该函数用于动态调整batch大小，根据每个样本的长度进行计算。
-    
+
     os.remove('translate_transformer_temp.csv')
 
     # 如果没有预训练权重，则构建词汇表，保存分词器
     if opt.load_weights is None:
-        SRC.build_vocab(train_dataset)  # train构建词汇表
-        TRG.build_vocab(train_dataset)
+        SRC.build_vocab(train_dataset)  # 会自动抽取train_dataset的src列文本构建源语言词汇表
+        TRG.build_vocab(train_dataset)  # 会自动抽取train_dataset的trg列文本构建目标语言词汇表
         if opt.checkpoint > 0:  # 大于0，说明需要保存权重，创建文件夹
             try:
                 os.mkdir("weights")
@@ -129,13 +129,14 @@ def create_dataset(opt, SRC, TRG):
     opt.src_pad = SRC.vocab.stoi['<pad>']
     opt.trg_pad = TRG.vocab.stoi['<pad>']
 
-    opt.train_len = get_len(train_iter)
+    opt.train_len = get_len(train_dataset_iter)  # 遍历一遍dataset，获取最后一个batch_data索引，作为train_len
 
-    return train_iter
+    return train_dataset_iter
 
-def get_len(train):
+def get_len(train_iter):
     """get train_dataset len: 多少个batch"""
-    for i, b in enumerate(train):
+    # 只是遍历train_dataset_iter，没有前向和反向推理，所以很快。i为batch索引，b为batch数据
+    for i, b in enumerate(train_iter):
         pass
     
-    return i
+    return i  # 返回最后一个batch索引
