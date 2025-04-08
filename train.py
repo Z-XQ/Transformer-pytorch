@@ -9,7 +9,6 @@ from Batch import create_masks
 import dill as pickle
 
 def train_model(model, opt):
-    
     print("training model...")
     model.train()
     start = time.time()
@@ -28,15 +27,21 @@ def train_model(model, opt):
                     
         for i, batch in enumerate(opt.train_dataset_iter):
 
-            src = batch.src.transpose(0, 1).to(opt.device)
-            trg = batch.trg.transpose(0, 1).to(opt.device)
-            trg_input = trg[:, :-1]
+            src = batch.src.transpose(0, 1).to(opt.device)  # (seq_len1, batch_size) -> (batch_size, seq_len1)
+            trg = batch.trg.transpose(0, 1).to(opt.device)  # (seq_len2, batch_size) -> (batch_size, seq_len2)
+            trg_input = trg[:, :-1]  # (batch_size, seq_len2-1)。去掉最后一个词。
+
             src_mask, trg_mask = create_masks(src, trg_input, opt)
-            src_mask.to(opt.device)
-            trg_mask.to(opt.device)
-            preds = model(src, trg_input, src_mask, trg_mask)
-            ys = trg[:, 1:].contiguous().view(-1)
+            src_mask.to(opt.device)  # (batch_size, 1, seq_len1) src_mask 主要用于处理源序列（src）中的填充（padding）部分。
+            trg_mask.to(opt.device)  # (batch_size, 1, seq_len2) trg_mask 遮住前面的词
+
+            # 输入上下文src，前面翻译的词trg_input，还有对应的mask。得到预测结果。
+            preds = model(src, trg_input, src_mask, trg_mask)  # preds.shape=(b, seq_len2-1, vocab_size)
+
+            ys = trg[:, 1:].contiguous().view(-1)  # ys代表预测的词，即翻译的词。 ys.shape=(b*(seq_len2-1),)=(1395,)
             opt.optimizer.zero_grad()
+
+            # preds: (b*(seq_len2-1),vocab_size); ys.shape=(b*(seq_len2-1), )
             loss = F.cross_entropy(preds.view(-1, preds.size(-1)), ys, ignore_index=opt.trg_pad)
             loss.backward()
             opt.optimizer.step()

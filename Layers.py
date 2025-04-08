@@ -13,6 +13,14 @@ class EncoderLayer(nn.Module):
         self.dropout_2 = nn.Dropout(dropout)
         
     def forward(self, x, mask):
+        """
+        x: (b,seq_len,d_model)
+        mask: (b,1,seq_len)
+
+        Returns
+        -------
+
+        """
         x2 = self.norm_1(x)
         x = x + self.dropout_1(self.attn(x2,x2,x2,mask))
         x2 = self.norm_2(x)

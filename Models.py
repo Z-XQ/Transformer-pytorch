@@ -11,9 +11,6 @@ def get_clones(module, n_layers):
 class Encoder(nn.Module):
     def __init__(self, vocab_size, d_model, n_layers, heads, dropout):
         """
-
-        Parameters
-        ----------
         vocab_size: int, 词表大小, 13724
         d_model: int, 词嵌入维度, 512
         n_layers: int, transformer中编码器层数和decoder层数, 6
@@ -27,9 +24,14 @@ class Encoder(nn.Module):
         self.layers = get_clones(EncoderLayer(d_model, heads, dropout), n_layers)
         self.norm = Norm(d_model)
     def forward(self, src, mask):
+        # 1，词嵌入层，将词转化为词嵌入向量
         x = self.embed(src)  # (b,seq_len)->(b,seq_len,d_model)
-        x = self.pe(x)
-        for i in range(self.n_layers):
+
+        # 2，加上位置编码
+        x = self.pe(x)  # (b,seq_len,d_model)
+
+        # 3，多头注意力层
+        for i in range(self.n_layers):  # 串行encoder_layer
             x = self.layers[i](x, mask)
         return self.norm(x)
     
@@ -55,10 +57,21 @@ class Transformer(nn.Module):
         self.decoder = Decoder(trg_vocab_size, d_model, n_layers, heads, dropout)
         self.out = nn.Linear(d_model, trg_vocab_size)
     def forward(self, src, trg, src_mask, trg_mask):
+        """
+        src
+        trg
+        src_mask: (b,1,seq_len)
+        trg_mask
+
+        Returns:
+        """
+        # src.shape=(b,seq_len1); src_mask.shape=(b,1,seq_len1); e_outputs.shape=(b,seq_len1,d_model)
         e_outputs = self.encoder(src, src_mask)
+
         #print("DECODER")
-        d_output = self.decoder(trg, e_outputs, src_mask, trg_mask)
-        output = self.out(d_output)
+        # trg:(b,seq_len2); e_outputs:(b,seq_len1,d_model); src_mask:(b,1,seq_len1); d_output: (b,seq_len2,seq_len2)
+        d_output = self.decoder(trg, e_outputs, src_mask, trg_mask)  # (b,seq_len2,d_model)
+        output = self.out(d_output)  # (b,seq_len2,d_model) -> (b,seq_len2,vocab_size)
         return output
 
 def get_model(opt, src_vocab_size, trg_vocab_size):

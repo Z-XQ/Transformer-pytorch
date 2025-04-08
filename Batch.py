@@ -10,8 +10,16 @@ def nopeak_mask(size, opt):
     return np_mask
 
 def create_masks(src, trg, opt):
-    
-    src_mask = (src != opt.src_pad).unsqueeze(-2).to(opt.device)
+    """
+    src: (b,seq_len1)
+    trg: (b,seq_len2)
+    opt
+    Returns:
+        src_mask: (b,1)
+        trg_mask: (b,1)
+
+    """
+    src_mask = (src != opt.src_pad).unsqueeze(-2).to(opt.device)  # 创建一个mask，用于屏蔽padding部分
 
     if trg is not None:
         trg_mask = (trg != opt.trg_pad).unsqueeze(-2).to(opt.device)

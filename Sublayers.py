@@ -38,11 +38,11 @@ def attention(q, k, v, d_k, mask=None, dropout=None):
     return output
 
 class MultiHeadAttention(nn.Module):
-    def __init__(self, heads, d_model, dropout = 0.1):
+    def __init__(self, heads=8, d_model=512, dropout = 0.1):
         super().__init__()
         
         self.d_model = d_model
-        self.d_k = d_model // heads
+        self.d_k = d_model // heads  # 512/8=64
         self.h = heads
         
         self.q_linear = nn.Linear(d_model, d_model)
@@ -53,7 +53,13 @@ class MultiHeadAttention(nn.Module):
         self.out = nn.Linear(d_model, d_model)
     
     def forward(self, q, k, v, mask=None):
-        
+        """
+        q,k,v: 来自同一个输入。(b,seq_len,d_model)
+        mask: (b,1,seg_len)
+
+        Returns:
+
+        """
         bs = q.size(0)
         
         # perform linear operation and split into N heads
@@ -76,16 +82,17 @@ class MultiHeadAttention(nn.Module):
     
         return output
 
+# 两层 全连接层：ln1 -> ReLU -> dropout -> ln2
 class FeedForward(nn.Module):
     def __init__(self, d_model, d_ff=2048, dropout = 0.1):
-        super().__init__() 
-    
+        super().__init__()
         # We set d_ff as a default to 2048
         self.linear_1 = nn.Linear(d_model, d_ff)
         self.dropout = nn.Dropout(dropout)
         self.linear_2 = nn.Linear(d_ff, d_model)
     
     def forward(self, x):
-        x = self.dropout(F.relu(self.linear_1(x)))
-        x = self.linear_2(x)
+        # ReLU激活函数之后使用dropout
+        x = self.dropout(F.relu(self.linear_1(x)))  # (bs, seq_len, d_model) -> (bs, seq_len, d_ff)
+        x = self.linear_2(x)  # (bs, seq_len, d_ff) -> (bs, seq_len, d_model)
         return x

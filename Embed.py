@@ -27,24 +27,33 @@ class PositionalEncoder(nn.Module):
         # pe = pe.unsqueeze(0)
         # self.register_buffer('pe', pe)
 
-        # 2,高效率实现方式：矩阵实现
+        # 2，高效率实现方式：矩阵实现
         self.pe = torch.zeros(max_seq_len, d_model)  # shape=(5000, 512)
         pos = torch.arange(0, max_seq_len).unsqueeze(1)  # shape=(5000, 1), 每个位置对应一个嵌入向量
         # 指数计算: 2i*(-ln(10000)/512). i的值范围是[0,256]
         div_term = torch.exp(torch.arange(0, d_model, 2) * (-math.log(10000.0) / d_model)).unsqueeze(0)
-        self.pe[:, 0::2] = torch.sin(pos * div_term)  # (5000,1) * (1,256) = (5000,256)
+
+        # self.pe[:, 0::2].shape=(5000,256) (5000,1) * (1,256) = (5000,256)
+        self.pe[:, 0::2] = torch.sin(pos * div_term)
         self.pe[:, 1::2] = torch.cos(pos * div_term)
         self.pe = self.pe.unsqueeze(0)  # (5000,256)->(1,5000,256)
 
     def forward(self, x):
-        # make embeddings relatively larger
+        """
+        x: token_embedding. (b,seq_len,d_model)
+        Returns: token_embedding + position_embedding
+        """
+        # 1, make embeddings relatively larger
+        # 乘以 √d_model 后，嵌入向量的模长变为√(d_model * 1) = √d_model，
+        # 与位置编码的模长量级一致（位置编码模长约为 √(d_model/2)，确保两者在加法中权重均衡。
         x = x * math.sqrt(self.d_model)
-        # add constant to embedding
+        # 2, 获取位置编码向量
         seq_len = x.size(1)
-        pe = Variable(self.pe[:,:seq_len], requires_grad=False)
+        cur_pe = Variable(self.pe[:,:seq_len], requires_grad=False)
         if x.is_cuda:
-            pe = pe.cuda()
-        x = x + pe
+            cur_pe = cur_pe.cuda()
+        # 3，# add constant to embedding，即常量位置编码加到词嵌入向量上
+        x = x + cur_pe
         return self.dropout(x)
 
 
