@@ -5,8 +5,15 @@ from torch.autograd import Variable
 
 
 def nopeak_mask(size, opt):
-    np_mask = np.triu(np.ones((1, size, size)), k=1).astype('uint8')
-    np_mask = Variable(torch.from_numpy(np_mask == 0).to(opt.device))
+    """
+    size: seq_len2. int. 8
+    opt
+    Returns: (1,seq_len2,seq_len2). 生成一个下三角布尔矩阵（对角线及下方为True，上方为False）
+    -------
+
+    """
+    np_mask = np.triu(np.ones((1, size, size)), k=1).astype('uint8')  # 上方为1，下方为0(包括主对角线）。(1,seq_len2,seq_len2)
+    np_mask = Variable(torch.from_numpy(np_mask == 0).to(opt.device))  # 下方为True. (1,seq_len2,seq_len2)
     return np_mask
 
 def create_masks(src, trg, opt):
@@ -15,16 +22,25 @@ def create_masks(src, trg, opt):
     trg: (b,seq_len2)
     opt
     Returns:
-        src_mask: (b,1)
-        trg_mask: (b,1)
+        src_mask: (b,1,seq_len1). false is padding location. 用于屏蔽padding部分
+        trg_mask: (b,seq_len2,seq_len2). 屏蔽padding部分，且遮住前面的词。下三角+屏蔽padding
 
     """
+    # 倒数第二的位置添加一个新维度
     src_mask = (src != opt.src_pad).unsqueeze(-2).to(opt.device)  # 创建一个mask，用于屏蔽padding部分
 
     if trg is not None:
-        trg_mask = (trg != opt.trg_pad).unsqueeze(-2).to(opt.device)
-        size = trg.size(1)  # get seq_len for matrix
-        np_mask = nopeak_mask(size, opt).to(opt.device)
+        # trg_mask: (b,1,seq_len2)
+        trg_mask = (trg != opt.trg_pad).unsqueeze(-2).to(opt.device)  # 用于屏蔽padding部分
+
+        # np_mask: (1,seq_len2,seq_len2).
+        size = trg.size(1)
+        np_mask = nopeak_mask(size, opt).to(opt.device)  # (1,seq_len2,seq_len2)
+
+        # 屏蔽padding部分，且遮住前面的词 (b,1,seq_len2) & (1,seq_len2,seq_len2) -> (b,seq_len2,seq_len2)
+        # 最后维度直接匹配，无需扩展；
+        # 第二维度，trg_mask复制seq_len2份：(b,1,seq_len2) -> (b,seq_len2,seq_len2)
+        # 第一维度，np_mask复制b份：(1,seq_len2,seq_len2) -> (b,seq_len2,seq_len2)
         trg_mask = trg_mask & np_mask
 
     else:

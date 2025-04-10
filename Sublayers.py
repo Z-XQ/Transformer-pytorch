@@ -22,7 +22,19 @@ class Norm(nn.Module):
         return norm
 
 def attention(q, k, v, d_k, mask=None, dropout=None):
-    
+    """
+    q: (b,h,seq_len,d_k)
+    k: (b,h,seq_len,d_k)
+    v: (b,h,seq_len,d_k)
+    d_k: int.
+    mask: (b,1,seq_len)
+    dropout: 0.1
+
+    Returns
+    -------
+
+    """
+    # (b,h,seq_len,d_k) mul (b,h,seq_len,d_k) -> (b,h,seq_len,seq_len)
     scores = torch.matmul(q, k.transpose(-2, -1)) /  math.sqrt(d_k)
     
     if mask is not None:
@@ -63,15 +75,14 @@ class MultiHeadAttention(nn.Module):
         bs = q.size(0)
         
         # perform linear operation and split into N heads
-        k = self.k_linear(k).view(bs, -1, self.h, self.d_k)
-        q = self.q_linear(q).view(bs, -1, self.h, self.d_k)
-        v = self.v_linear(v).view(bs, -1, self.h, self.d_k)
-        
+        k = self.k_linear(k).view(bs, -1, self.h, self.d_k)  # (b,seq_len,d_model) -> (b,seq_len,h,d_k)
+        q = self.q_linear(q).view(bs, -1, self.h, self.d_k)  # (b,seq_len,d_model) -> (b,seq_len,h,d_k)
+        v = self.v_linear(v).view(bs, -1, self.h, self.d_k)  # (b,seq_len,d_model) -> (b,seq_len,h,d_k)
+
         # transpose to get dimensions bs * N * sl * d_model
-        k = k.transpose(1,2)
-        q = q.transpose(1,2)
-        v = v.transpose(1,2)
-        
+        k = k.transpose(1,2)  # (b,h,seq_len,d_k)
+        q = q.transpose(1,2)  # (b,h,seq_len,d_k)
+        v = v.transpose(1,2)  # (b,h,seq_len,d_k)
 
         # calculate attention using function we will define next
         scores = attention(q, k, v, self.d_k, mask, self.dropout)

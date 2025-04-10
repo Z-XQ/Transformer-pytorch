@@ -24,6 +24,14 @@ class Encoder(nn.Module):
         self.layers = get_clones(EncoderLayer(d_model, heads, dropout), n_layers)
         self.norm = Norm(d_model)
     def forward(self, src, mask):
+        """
+        src: (b,seq_len)
+        mask: (b,seq_len)
+
+        Returns
+        -------
+
+        """
         # 1，词嵌入层，将词转化为词嵌入向量
         x = self.embed(src)  # (b,seq_len)->(b,seq_len,d_model)
 
@@ -58,15 +66,16 @@ class Transformer(nn.Module):
         self.out = nn.Linear(d_model, trg_vocab_size)
     def forward(self, src, trg, src_mask, trg_mask):
         """
-        src
-        trg
-        src_mask: (b,1,seq_len)
-        trg_mask
+        输入原文src，前面翻译的词trg_input，还有对应的mask。得到预测结果。
+        src: (b, seq_len1)
+        trg: (b, seq_len2)
+        src_mask: (b,1,seq_len): (b, 1, seq_len1) src_mask 主要用于处理源序列（src）中的填充（padding）部分。
+        trg_mask: (b, seq_len2, seq_len2) trg_mask 遮住前面的词和填充（padding）部分。
 
         Returns:
         """
         # src.shape=(b,seq_len1); src_mask.shape=(b,1,seq_len1); e_outputs.shape=(b,seq_len1,d_model)
-        e_outputs = self.encoder(src, src_mask)
+        e_outputs = self.encoder(src, src_mask)  # 提取原文的编码向量。
 
         #print("DECODER")
         # trg:(b,seq_len2); e_outputs:(b,seq_len1,d_model); src_mask:(b,1,seq_len1); d_output: (b,seq_len2,seq_len2)
