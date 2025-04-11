@@ -34,14 +34,15 @@ def create_masks(src, trg, opt):
         # tmp = trg_mask.view(trg_mask.shape[0], -1).cpu().numpy()  # 查看对齐情况
 
         # np_mask: (1,seq_len2,seq_len2).
-        size = trg.size(1)
-        np_mask = nopeak_mask(size, opt).to(opt.device)  # (1,seq_len2,seq_len2)
+        seq_lens2 = trg.size(1)
+        np_mask = nopeak_mask(seq_lens2, opt).to(opt.device)  # (1,seq_len2,seq_len2)
         # tmp = np_mask[0].cpu().numpy()  # 查看对齐情况
 
         # 屏蔽padding部分，且遮住前面的词 (b,1,seq_len2) & (1,seq_len2,seq_len2) -> (b,seq_len2,seq_len2)
         # 最后维度直接匹配，无需扩展；
         # 第二维度，trg_mask复制seq_len2份：(b,1,seq_len2) -> (b,seq_len2,seq_len2)
         # 第一维度，np_mask复制b份：(1,seq_len2,seq_len2) -> (b,seq_len2,seq_len2)
+        # 相乘后的每一行代表：预测当前词时的可见的词（屏蔽后面的词和padding词）。
         trg_mask = trg_mask & np_mask
 
     else:

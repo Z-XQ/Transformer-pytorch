@@ -61,9 +61,14 @@ class Decoder(nn.Module):
 class Transformer(nn.Module):
     def __init__(self, src_vocab_size, trg_vocab_size, d_model, n_layers, heads, dropout):
         super().__init__()
+        assert d_model % heads == 0  # 嵌入向量维度必须能被head头数整除
+        assert dropout < 1
+
         self.encoder = Encoder(src_vocab_size, d_model, n_layers, heads, dropout)
         self.decoder = Decoder(trg_vocab_size, d_model, n_layers, heads, dropout)
         self.out = nn.Linear(d_model, trg_vocab_size)
+        self._init_weights_()
+
     def forward(self, src, trg, src_mask, trg_mask):
         """
         输入原文src，前面翻译的词trg_input，还有对应的mask。得到预测结果。
@@ -83,21 +88,22 @@ class Transformer(nn.Module):
         output = self.out(d_output)  # (b,seq_len2,d_model) -> (b,seq_len2,vocab_size)
         return output
 
-def get_model(opt, src_vocab_size, trg_vocab_size):
-    
-    assert opt.d_model % opt.heads == 0  # 嵌入向量维度必须能被head头数整除
-    assert opt.dropout < 1
+    def _init_weights_(self):
+        for p in self.parameters():
+            if p.dim() > 1:  # 矩阵维度大于1，则初始化权重，用于跳过偏置向量等一维参数，只对二维及以上的权重矩阵进行Xavier初始化。
+                nn.init.xavier_uniform_(p)
 
+def get_model(opt, src_vocab_size, trg_vocab_size):
     model = Transformer(src_vocab_size, trg_vocab_size, opt.d_model, opt.n_layers, opt.heads, opt.dropout)
     model.to(opt.device)
        
     if opt.load_weights is not None:
         print("loading pretrained weights...")
         model.load_state_dict(torch.load(f'{opt.load_weights}/model_weights'))
-    else:  # 训练的权重不存在，则初始化权重
-        for p in model.parameters():
-            if p.dim() > 1:  # 矩阵维度大于1，则初始化权重，用于跳过偏置向量等一维参数，只对二维及以上的权重矩阵进行Xavier初始化。
-                nn.init.xavier_uniform_(p) 
+    # else:  # 训练的权重不存在，则初始化权重
+    #     for p in model.parameters():
+    #         if p.dim() > 1:  # 矩阵维度大于1，则初始化权重，用于跳过偏置向量等一维参数，只对二维及以上的权重矩阵进行Xavier初始化。
+    #             nn.init.xavier_uniform_(p)
     
     return model
     

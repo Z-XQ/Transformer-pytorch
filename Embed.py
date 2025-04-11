@@ -49,7 +49,10 @@ class PositionalEncoder(nn.Module):
         x = x * math.sqrt(self.d_model)
         # 2, 获取位置编码向量
         seq_len = x.size(1)
-        cur_pe = Variable(self.pe[:,:seq_len], requires_grad=False)
+        # cur_pe = Variable(self.pe[:,:seq_len], requires_grad=False)  # 显示说明这是一个常量位置编码向量，不需要求梯度
+        cur_pe = self.pe[:, :seq_len].requires_grad_(False)  # 显示说明这是一个常量位置编码向量，不需要求梯度
+        # cur_pe = self.pe[:, :seq_len]  # 直接切片，自动继承 requires_grad=False
+
         if x.is_cuda:
             cur_pe = cur_pe.cuda()
         # 3，# add constant to embedding，即常量位置编码加到词嵌入向量上
