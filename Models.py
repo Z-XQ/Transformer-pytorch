@@ -23,10 +23,10 @@ class Encoder(nn.Module):
         self.pe = PositionalEncoder(d_model, dropout=dropout)
         self.layers = get_clones(EncoderLayer(d_model, heads, dropout), n_layers)
         self.norm = Norm(d_model)
-    def forward(self, src, mask):
+    def forward(self, src, src_mask):
         """
         src: (b,seq_len)
-        mask: (b,seq_len)
+        src_mask: (b,1,seq_len): 主要用于处理源序列（src）中的填充（padding）部分。
 
         Returns
         -------
@@ -40,7 +40,7 @@ class Encoder(nn.Module):
 
         # 3，多头注意力层
         for i in range(self.n_layers):  # 串行encoder_layer
-            x = self.layers[i](x, mask)
+            x = self.layers[i](x, src_mask)
         return self.norm(x)
     
 class Decoder(nn.Module):

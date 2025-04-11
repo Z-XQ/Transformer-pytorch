@@ -12,17 +12,17 @@ class EncoderLayer(nn.Module):
         self.dropout_1 = nn.Dropout(dropout)
         self.dropout_2 = nn.Dropout(dropout)
         
-    def forward(self, x, mask):
+    def forward(self, x, src_mask):
         """
         x: (b,seq_len,d_model)
-        mask: (b,1,seq_len)
+        src_mask: (b,1,seq_len): 主要用于处理源序列（src）中的填充（padding）部分。
 
         Returns
         -------
 
         """
         x2 = self.norm_1(x)
-        x = x + self.dropout_1(self.attn(x2,x2,x2,mask))
+        x = x + self.dropout_1(self.attn(x2,x2,x2,src_mask))
         x2 = self.norm_2(x)
         x = x + self.dropout_2(self.ff(x2))
         return x
