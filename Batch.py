@@ -1,8 +1,6 @@
 import torch
 from torchtext.legacy import data
 import numpy as np
-from torch.autograd import Variable
-
 
 def nopeak_mask(size, opt):
     """
@@ -12,8 +10,9 @@ def nopeak_mask(size, opt):
     -------
 
     """
+    # k=1 意味着从主对角线右上方第一条对角线开始取上三角部分(第一行只有一个0），主对角线及其下方的元素都会被置为 0。
     np_mask = np.triu(np.ones((1, size, size)), k=1).astype('uint8')  # 上方为1，下方为0(包括主对角线）。(1,seq_len2,seq_len2)
-    np_mask = Variable(torch.from_numpy(np_mask == 0).to(opt.device))  # 下方为True. (1,seq_len2,seq_len2)
+    np_mask = torch.from_numpy(np_mask == 0).to(opt.device)  # 下方为True. (1,seq_len2,seq_len2)
     return np_mask
 
 def create_masks(src, trg, opt):
@@ -28,14 +27,16 @@ def create_masks(src, trg, opt):
     """
     # 倒数第二的位置添加一个新维度
     src_mask = (src != opt.src_pad).unsqueeze(-2).to(opt.device)  # 创建一个mask，用于屏蔽padding部分
-
-    if trg is not None:
+    # tmp = src_mask.view(src_mask.shape[0], -1).cpu().numpy()  # 查看对齐情况
+    if trg is not None:  # 已经有翻译文本，则是训练模式
         # trg_mask: (b,1,seq_len2)
         trg_mask = (trg != opt.trg_pad).unsqueeze(-2).to(opt.device)  # 用于屏蔽padding部分
+        # tmp = trg_mask.view(trg_mask.shape[0], -1).cpu().numpy()  # 查看对齐情况
 
         # np_mask: (1,seq_len2,seq_len2).
         size = trg.size(1)
         np_mask = nopeak_mask(size, opt).to(opt.device)  # (1,seq_len2,seq_len2)
+        # tmp = np_mask[0].cpu().numpy()  # 查看对齐情况
 
         # 屏蔽padding部分，且遮住前面的词 (b,1,seq_len2) & (1,seq_len2,seq_len2) -> (b,seq_len2,seq_len2)
         # 最后维度直接匹配，无需扩展；
@@ -44,7 +45,7 @@ def create_masks(src, trg, opt):
         trg_mask = trg_mask & np_mask
 
     else:
-        trg_mask = None
+        trg_mask = None  # 测试模型，则没有翻译文本，需要逐个生成，也就不需要遮住后面的词
     return src_mask, trg_mask
 
 # patch on Torchtext's batching process that makes it more efficient
