@@ -4,6 +4,12 @@ import torch.nn.functional as F
 import math
 
 
+"""
+类似LayerNorm的功能，与BatchNorm1d的主要区别在于：
+1. 归一化维度不同（LayerNorm对特征维度，BatchNorm对批量维度）
+2. 统计量计算方式不同（LayerNorm每个样本独立计算，BatchNorm跨样本计算）
+3. 适用场景不同（LayerNorm更适合序列模型，BatchNorm适合图像等固定维度数据）
+"""
 class Norm(nn.Module):
     def __init__(self, d_model, eps = 1e-6):
         super().__init__()
@@ -11,14 +17,15 @@ class Norm(nn.Module):
         self.size = d_model
         
         # create two learnable parameters to calibrate normalisation
-        self.alpha = nn.Parameter(torch.ones(self.size))
+        self.alpha = nn.Parameter(torch.ones(self.size))  # (512,). 可学习的参数
         self.bias = nn.Parameter(torch.zeros(self.size))
-        
         self.eps = eps
     
-    def forward(self, x):
-        norm = self.alpha * (x - x.mean(dim=-1, keepdim=True)) \
-        / (x.std(dim=-1, keepdim=True) + self.eps) + self.bias
+    def forward(self, x):  # x: (b,seq_len,d_model)
+        # 公式：alpha（x-m)/std(x) + bias
+        norm = self.alpha * (x - x.mean(dim=-1, keepdim=True)) / (x.std(dim=-1, keepdim=True) + self.eps) + self.bias
+        # x.mean(dim=-1, keepdim=True): (b,seq_len,1)
+        # x.std(dim=-1, keepdim=True): (b,seq_len,1)
         return norm
 
 def attention(q, k, v, d_k, mask=None, dropout=None):
@@ -36,6 +43,7 @@ def attention(q, k, v, d_k, mask=None, dropout=None):
     """
     # (b,h,seq_len,d_k) mul (b,h,d_k,seq_len) -> (b,h,seq_len,seq_len)
     # q*k^T -> attention分数值(b,h,seq_len,seq_len)
+    # 可以将点积结果的量级进行缩放，使其保持在一个合理的范围内。这样，softmax 函数的输入不会过大，输出的概率分布更加平滑，避免了梯度消失或爆炸问题，同时也提高了模型的学习效率和稳定性。
     scores = torch.matmul(q, k.transpose(-2, -1)) /  math.sqrt(d_k)  # 分母的作用：避免过大的权重值，过大的权重值会导致梯度消失，从而影响模型的训练效果。
 
     # 屏蔽padding part，一直设置为0，避免影响计算结果

@@ -2,6 +2,8 @@ import torch
 import torch.nn as nn
 from Sublayers import FeedForward, MultiHeadAttention, Norm
 
+
+# norm, multi-head attention, dropout, res, norm, feed-forward, dropout
 class EncoderLayer(nn.Module):
     def __init__(self, d_model, heads, dropout=0.1):
         super().__init__()

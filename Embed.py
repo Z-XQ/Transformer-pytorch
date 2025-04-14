@@ -46,15 +46,16 @@ class PositionalEncoder(nn.Module):
         # 1, make embeddings relatively larger
         # 乘以 √d_model 后，嵌入向量的模长变为√(d_model * 1) = √d_model，
         # 与位置编码的模长量级一致（位置编码模长约为 √(d_model/2)，确保两者在加法中权重均衡。
-        x = x * math.sqrt(self.d_model)
+        x = x * math.sqrt(self.d_model)  # 此操作的目的是让词嵌入与位置编码在量级上相匹配，从而保证二者在相加时权重能够均衡。
+
         # 2, 获取位置编码向量
         seq_len = x.size(1)
         # cur_pe = Variable(self.pe[:,:seq_len], requires_grad=False)  # 显示说明这是一个常量位置编码向量，不需要求梯度
-        cur_pe = self.pe[:, :seq_len].requires_grad_(False)  # 显示说明这是一个常量位置编码向量，不需要求梯度
-        # cur_pe = self.pe[:, :seq_len]  # 直接切片，自动继承 requires_grad=False
-
+        # cur_pe = self.pe[:, :seq_len].requires_grad_(False)  # 显示说明这是一个常量位置编码向量，不需要求梯度
+        cur_pe = self.pe[:, :seq_len]  # 直接切片，自动继承 requires_grad=False
         if x.is_cuda:
             cur_pe = cur_pe.cuda()
+
         # 3，# add constant to embedding，即常量位置编码加到词嵌入向量上
         x = x + cur_pe
         return self.dropout(x)
