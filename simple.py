@@ -1,9 +1,9 @@
+import copy
 import math
 
 import torch
 import numpy as np
 from torch.distributions.constraints import lower_triangular
-
 from Batch import nopeak_mask
 import torch.nn as nn
 
@@ -48,12 +48,11 @@ def create_masks(src, trg, padding_num=1):
     return src_mask, trg_mask
 
 
-
 # 对特征维度进行，alpha * (x-m) / std + bias
 class FeatureNorm(nn.Module):
     def __init__(self, d_model, eps=1e-6):
         super().__init__()
-        self.alpha = nn.Parameter(torch.ones(size=d_model))
+        self.alpha = nn.Parameter(torch.ones(size=d_model))  # 每个维度都有各自的权重
         self.bias = nn.Parameter(torch.zeros(size=d_model))
         self.eps = eps
 
@@ -62,16 +61,6 @@ class FeatureNorm(nn.Module):
         # alpha*(x-m)/std(x) + bias
         norm = self.alpha * (x - x.mean(dim=-1, keepdim=True)) / (x.std(dim=-1, keepdim=True) + self.eps) + self.bias
         return norm
-
-class MultiHeadAttention(nn.Module):
-    pass
-
-class FeedForward(nn.Module):
-    pass
-
-# 3 encoder-layers
-class EncoderLayer(nn.Module):
-    pass
 
 
 # 1 token-embedding
@@ -112,15 +101,129 @@ class PositionalEmbedding(nn.Module):
         x = x + cur_pe  #
         return self.dropout(x)
 
-class EncoderLayer(nn.Module):
+
+
+
+"""
+1, fn1, fn2, fn3: (b,seq_len,d_model) -> (b,seq_len,d_model)
+2, split q,k,v: (b,seq_len,d_model) -> (b,seq_len,h,d_k)
+3, transpose q,k,v:  (b,seq_len,h,d_k) ->  (b,h,seq_len,d_k)
+4, multi-attention: (b,h,seq_len,d_k) -> (b,h,seq_len,d_k)
+5, concat: (b,h,seq_len,d_k) -> (b,seq_len,h*d_k)
+6, fn: (b,seq_len,h*d_k) -> (b,seq_len,h*d_k=d_model)
+"""
+class MultiHeadAttention(nn.Module):
+    def __init__(self, d_model, heads, dropout=0.1):
+        super().__init__()
+        self.fn1 = nn.Linear(d_model, d_model)
+        self.fn2 = nn.Linear(d_model, d_model)
+        self.fn3 = nn.Linear(d_model, d_model)
+
+        self.d_k = d_model // heads
+        self.heads = heads
+
+        self.dropout = nn.Dropout(dropout)
+        self.fn = nn.Linear(d_model, d_model)
+
+    def forward(self, q, k, v, src_mask):
+        """
+        q, k, v: (b, seq_len, d_model);
+        return: (b,seq_len,d_model)"""
+
+        # 1, fn+split: (b, seq_len, d_model) -> # (b, seq_len, heads, d_k)
+        b = q.size(0)
+        q = self.fn1(q).view(b, -1, self.heads, self.d_k)
+        k = self.fn2(k).view(b, -1, self.heads, self.d_k)
+        v = self.fn3(v).view(b, -1, self.heads, self.d_k)
+
+        # 2, transpose: (b, seq_len, heads, d_k) -> (b, heads, seq_len, d_k)
+        q = q.transpose(1, 2)
+        k = k.transpose(1, 2)
+        v = v.transpose(1, 2)
+
+        # 3, attention: (b, heads, seq_len, d_k) -> (b, heads, seq_len, d_k)
+        scores = self.multi_attention(q, k, v, src_mask)
+        pass
+
+    def multi_attention(self, q, k, v, src_mask):
+        """
+        1, matmul(q,k^T) scale  -> scores(b,h,seq_len,seq_len) -> mask -> softmax最后维度 -> (b,h,seq_len,seq_len) ->
+        2, matmul(scores,v) -> (b,h,seq_len,d_k)
+        q, k, v: (b,heads,seq_len,d_k)
+        src_mask: (b,1,seq_len). 用于处理源序列（src）中的填充（padding）部分。
+        return: (b,heads,seq_len,d_k)
+        """
+        # 1, matmul(q,k^T) scale -> scores(b,h,seq_len,seq_len) -> mask -> softmax最后维度 -> (b,h,seq_len,seq_len)
+        # 可以将点积结果的量级进行缩放，使其保持在一个合理的范围内。这样，softmax 函数的输入不会过大，输出的概率分布在中间区域，避免了梯度消失或爆炸问题，同时也提高了模型的学习效率和稳定性。
+        scores = torch.matmul(q, k.transpose(-1, -2)) / math.sqrt(self.d_k)
+
+        # 屏蔽位置的分数设置为很小值，在后续的 softmax 操作中把这些位置的权重置为接近 0 的值，进而屏蔽掉这些位置。
+        if src_mask is not None:
+            mask = src_mask.unsqueeze(1)  #
+            scores = scores.mask_fill(mask == 0, -1e9)
+            # scores_where = torch.where(mask == 0, -1e9, scores)
+        scores = torch.softmax(scores, dim=-1)
+
+        # 2, matmul(scores,v) -> (b,h,seq_len,d_k)
+        pass
+
+        return scores
+
+class FeedForward(nn.Module):
     pass
 
+# 3 encoder-layers: norm1->multi-head attention->dropout1 -> res-> norm2->feed-forward->dropout2
+class EncoderLayer(nn.Module):
+    def __init__(self, d_model, heads, dropout=0.1):
+        super().__init__()
+        self.norm1 = FeatureNorm(d_model)
+        self.norm2 = FeatureNorm(d_model)
+        self.attention = MultiHeadAttention(d_model, heads, dropout)
+        self.fn = FeedForward(d_model, dropout=dropout)
+        self.dropout1 = nn.Dropout(dropout)
+        self.dropout2 = nn.Dropout(dropout)
+
+    def forward(self, x, src_mask):
+        """
+        x: (b,seq_len,d_model)
+        src_mask: (b,1,seq_len). 用于处理源序列（src）中的填充（padding）部分。
+        Returns
+        -------
+
+        """
+        tmp = self.norm1(x)
+        tmp = self.dropout1(self.attention(tmp, tmp, tmp, src_mask))  # (b,seq_len,d_model)
+        x = x + tmp
+
+        tmp = self.norm2(x)
+        tmp = self.dropout2(self.fn(tmp))
+        x = x + tmp
+        return x
+
+def get_clones(module, n_layers):
+    return nn.ModuleList([copy.deepcopy(module) for i in range(n_layers)])
+
+"""token-embed -> position-embed -> encoderLayer -> norm"""
 class Encoder(nn.Module):
     """包含了token-embedding, position-embedding, encoder-layers"""
     def __init__(self, vocab_size, d_model, n_layers, heads, dropout):
         super().__init__()
         self.token_embed = TokenEmbedding(vocab_size, d_model)
         self.position_embed = PositionalEmbedding(d_model)
+        self.layers = get_clones(EncoderLayer(d_model, heads, dropout), n_layers)
+        self.norm = FeatureNorm(d_model)
+
+    def forward(self, x, src_mask):
+        """
+        x: (b, seq_len)
+        src_mask: (b, 1, seq_len). 用于处理源序列（src）中的填充（padding）部分。
+        """
+        x = self.token_embed(x)  # (b,seq_len) -> (b,seq_len,d_model)
+        x = self.position_embed(x)  # (b,seq_len,d_model)
+        for layer in self.layers:
+            x = layer(x, src_mask)  # (b,seq_len,d_model)
+        x = self.norm(x)
+        return x  # (b,seq_len,d_model)
 
 class Decoder(nn.Module):
     pass

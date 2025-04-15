@@ -8,6 +8,7 @@ import copy
 def get_clones(module, n_layers):
     return nn.ModuleList([copy.deepcopy(module) for i in range(n_layers)])
 
+"""token-embed -> position-embed -> encoderLayer -> norm"""
 class Encoder(nn.Module):
     def __init__(self, vocab_size, d_model, n_layers, heads, dropout):
         """
@@ -26,7 +27,7 @@ class Encoder(nn.Module):
     def forward(self, src, src_mask):
         """
         src: (b,seq_len)
-        src_mask: (b,1,seq_len): 主要用于处理源序列（src）中的填充（padding）部分。
+        src_mask: (b,1,seq_len): 用于处理源序列（src）中的填充（padding）部分。
 
         Returns
         -------

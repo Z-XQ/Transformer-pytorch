@@ -3,7 +3,7 @@ import torch.nn as nn
 from Sublayers import FeedForward, MultiHeadAttention, Norm
 
 
-# norm, multi-head attention, dropout, res, norm, feed-forward, dropout
+# norm1->multi-head attention->dropout1 -> res-> norm2->feed-forward->dropout
 class EncoderLayer(nn.Module):
     def __init__(self, d_model, heads, dropout=0.1):
         super().__init__()
@@ -24,7 +24,8 @@ class EncoderLayer(nn.Module):
 
         """
         x2 = self.norm_1(x)
-        x = x + self.dropout_1(self.attn(x2,x2,x2,src_mask))
+        x = x + self.dropout_1(self.attn(x2,x2,x2,src_mask))  # (b,seq_len,d_model)->(b,seq_len,d_model)
+
         x2 = self.norm_2(x)
         x = x + self.dropout_2(self.ff(x2))
         return x
