@@ -2,10 +2,12 @@ import math
 
 import torch
 import numpy as np
+from torch.distributions.constraints import lower_triangular
+
 from Batch import nopeak_mask
 import torch.nn as nn
 
-def lower_mask(seq_len):
+def lower_triangular_mask(seq_len):
     """
     seq_len: int. seq_len
 
@@ -35,14 +37,41 @@ def create_masks(src, trg, padding_num=1):
     if trg is not None:
         # padding 部分  (b,1,seq_len2)
         trg_mask = (trg != padding_num).unsqueeze(-2)
+
         # 后面的词
         seq_len2 = trg.size(1)
-        np_mask = lower_mask(seq_len2)  # (1, seq_len2, seq_len2)
+        np_mask = lower_triangular_mask(seq_len2)  # (1, seq_len2, seq_len2)
         trg_mask = trg_mask & np_mask  # (b,seq_len2,seq_len2)
     else:
         trg_mask = None
 
     return src_mask, trg_mask
+
+
+
+# 对特征维度进行，alpha * (x-m) / std + bias
+class FeatureNorm(nn.Module):
+    def __init__(self, d_model, eps=1e-6):
+        super().__init__()
+        self.alpha = nn.Parameter(torch.ones(size=d_model))
+        self.bias = nn.Parameter(torch.zeros(size=d_model))
+        self.eps = eps
+
+    def forward(self, x):
+        """x: (b,seq_len,d_model)"""
+        # alpha*(x-m)/std(x) + bias
+        norm = self.alpha * (x - x.mean(dim=-1, keepdim=True)) / (x.std(dim=-1, keepdim=True) + self.eps) + self.bias
+        return norm
+
+class MultiHeadAttention(nn.Module):
+    pass
+
+class FeedForward(nn.Module):
+    pass
+
+# 3 encoder-layers
+class EncoderLayer(nn.Module):
+    pass
 
 
 # 1 token-embedding
@@ -54,11 +83,11 @@ class TokenEmbedding(nn.Module):
     def forward(self, x):
         return self.embed(x)
 
-# 2 position-embedding
+# 2 position-embedding: scale token-embedding -> position-embedding -> add -> dropout
 class PositionalEmbedding(nn.Module):
     def __init__(self, d_model, max_seq_len=200, dropout=0.1):
         super().__init__()
-        self.d_model = d_model
+        self.d_model = d_model  # for scale token-embedding
         self.dropout = nn.Dropout(dropout)
 
         # (max_seq_len, d_model)
@@ -83,26 +112,6 @@ class PositionalEmbedding(nn.Module):
         x = x + cur_pe  #
         return self.dropout(x)
 
-class FeatureNorm(nn.Module):
-    def __init__(self, d_model, eps=1e-6):
-        super().__init__()
-        self.alpha = nn.Parameter(torch.ones(size=d_model))
-        self.bias = nn.Parameter(torch.zeros(size=d_model))
-        self.eps = eps
-
-    def forward(self, x):
-        """x: (b,seq_len,d_model)"""
-        # alpha*(x-m)/std(x) + bias
-        norm = self.alpha * (x - x.mean(dim=-1, keepdim=True)) / (x.std(dim=-1, keepdim=True) + self.eps) + self.bias
-        return norm
-
-class MultiHeadAttention(nn.Module):
-    pass
-
-class FeedForward(nn.Module):
-    pass
-
-# 3 encoder-layers
 class EncoderLayer(nn.Module):
     pass
 
