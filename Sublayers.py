@@ -28,22 +28,14 @@ class Norm(nn.Module):
         # x.std(dim=-1, keepdim=True): (b,seq_len,1)
         return norm
 
-"""
-matmul(q,k^T) -> scores(b,h,seq_len,seq_len) -> mask -> softmax最后维度 -> (b,h,seq_len,seq_len) -> 
-matmul(scores,v) -> (b,h,seq_len,d_k) 
-"""
 def multi_attention(q, k, v, d_k, mask=None, dropout=None):
     """
-    q: (b,h,seq_len,d_k)
-    k: (b,h,seq_len,d_k)
-    v: (b,h,seq_len,d_k)
-    d_k: int.
-    src_mask: (b,1,seq_len): 主要用于处理源序列（src）中的填充（padding）部分。
-    dropout: 0.1
+        q, k, v: (b,heads,seq_len,d_k)
+        src_mask: (b,1,seq_len). 用于处理源序列（src）中的填充（padding）部分。
+        return: (b,heads,seq_len,d_k)
 
-    Returns
-    -------
-
+        1, matmul(q,k^T) scale  -> scores(b,h,seq_len,seq_len) -> mask -> softmax最后维度 -> dropout -> (b,h,seq_len,seq_len)
+        2, -> matmul(scores,v) -> (b,h,seq_len,d_k)
     """
     # (b,h,seq_len,d_k) mul (b,h,d_k,seq_len) -> (b,h,seq_len,seq_len)
     # q*k^T -> attention分数值(b,h,seq_len,seq_len)
@@ -69,12 +61,11 @@ def multi_attention(q, k, v, d_k, mask=None, dropout=None):
     return output
 
 """
-fn1, fn2, fn3: (b,seq_len,d_model) -> (b,seq_len,d_model) 
-split q,k,v: (b,seq_len,d_model) -> (b,seq_len,h,d_k)
-transpose q,k,v:  (b,seq_len,h,d_k) ->  (b,h,seq_len,d_k)
-attention: (b,h,seq_len,d_k) -> (b,h,seq_len,d_k)
-concat: (b,h,seq_len,d_k) -> (b,seq_len,h*d_k)
-fn: (b,seq_len,h*d_k) -> (b,seq_len,h*d_k=d_model)
+1, fn1, fn2, fn3: (b,seq_len,d_model) -> (b,seq_len,d_model)
+2, split q,k,v: view+transpose, (b,seq_len,d_model) -> (b,h,seq_len,d_k)
+3, multi-attention: (b,h,seq_len,d_k) -> (b,h,seq_len,d_k)
+4, concat: transpose+view, (b,h,seq_len,d_k) -> (b,seq_len,h*d_k)
+5, fn: (b,seq_len,h*d_k) -> (b,seq_len,h*d_k=d_model)
 """
 class MultiHeadAttention(nn.Module):
     def __init__(self, heads=8, d_model=512, dropout = 0.1):

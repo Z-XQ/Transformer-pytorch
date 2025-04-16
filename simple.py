@@ -102,15 +102,12 @@ class PositionalEmbedding(nn.Module):
         return self.dropout(x)
 
 
-
-
 """
 1, fn1, fn2, fn3: (b,seq_len,d_model) -> (b,seq_len,d_model)
-2, split q,k,v: (b,seq_len,d_model) -> (b,seq_len,h,d_k)
-3, transpose q,k,v:  (b,seq_len,h,d_k) ->  (b,h,seq_len,d_k)
-4, multi-attention: (b,h,seq_len,d_k) -> (b,h,seq_len,d_k)
-5, concat: (b,h,seq_len,d_k) -> (b,seq_len,h*d_k)
-6, fn: (b,seq_len,h*d_k) -> (b,seq_len,h*d_k=d_model)
+2, split q,k,v: view+transpose, (b,seq_len,d_model) -> (b,h,seq_len,d_k)
+3, multi-attention: (b,h,seq_len,d_k) -> (b,h,seq_len,d_k)
+4, concat: transpose+view, (b,h,seq_len,d_k) -> (b,seq_len,h*d_k)
+5, fn: (b,seq_len,h*d_k) -> (b,seq_len,h*d_k=d_model)
 """
 class MultiHeadAttention(nn.Module):
     def __init__(self, d_model, heads, dropout=0.1):
@@ -128,6 +125,7 @@ class MultiHeadAttention(nn.Module):
     def forward(self, q, k, v, src_mask):
         """
         q, k, v: (b, seq_len, d_model);
+        src_mask: (b,1,seq_len). 用于处理源序列（src）中的填充（padding）部分。
         return: (b,seq_len,d_model)"""
 
         # 1, fn+split: (b, seq_len, d_model) -> # (b, seq_len, heads, d_k)
@@ -143,15 +141,21 @@ class MultiHeadAttention(nn.Module):
 
         # 3, attention: (b, heads, seq_len, d_k) -> (b, heads, seq_len, d_k)
         scores = self.multi_attention(q, k, v, src_mask)
-        pass
+
+        # 4, concat: (b, heads, seq_len, d_k) -> (b, seq_len, heads * d_k)
+        scores = scores.transpose(1, 2).contiguous().view(b, -1, self.d_k * self.heads)
+
+        # 5, output
+        return self.fn(scores)
 
     def multi_attention(self, q, k, v, src_mask):
         """
-        1, matmul(q,k^T) scale  -> scores(b,h,seq_len,seq_len) -> mask -> softmax最后维度 -> (b,h,seq_len,seq_len) ->
-        2, matmul(scores,v) -> (b,h,seq_len,d_k)
         q, k, v: (b,heads,seq_len,d_k)
         src_mask: (b,1,seq_len). 用于处理源序列（src）中的填充（padding）部分。
         return: (b,heads,seq_len,d_k)
+
+        1, matmul(q,k^T) scale  -> scores(b,h,seq_len,seq_len) -> mask -> softmax最后维度 -> dropout -> (b,h,seq_len,seq_len)
+        2, -> matmul(scores,v) -> (b,h,seq_len,d_k)
         """
         # 1, matmul(q,k^T) scale -> scores(b,h,seq_len,seq_len) -> mask -> softmax最后维度 -> (b,h,seq_len,seq_len)
         # 可以将点积结果的量级进行缩放，使其保持在一个合理的范围内。这样，softmax 函数的输入不会过大，输出的概率分布在中间区域，避免了梯度消失或爆炸问题，同时也提高了模型的学习效率和稳定性。
@@ -159,15 +163,17 @@ class MultiHeadAttention(nn.Module):
 
         # 屏蔽位置的分数设置为很小值，在后续的 softmax 操作中把这些位置的权重置为接近 0 的值，进而屏蔽掉这些位置。
         if src_mask is not None:
-            mask = src_mask.unsqueeze(1)  #
+            mask = src_mask.unsqueeze(1)  # (b,1,1,seq_len)
             scores = scores.masked_fill(mask == 0, -1e9)
             # scores_where = torch.where(mask == 0, -1e9, scores)
         scores = torch.softmax(scores, dim=-1)
 
-        # 2, matmul(scores,v) -> (b,h,seq_len,d_k)
-        pass
+        scores = self.dropout(scores)
 
-        return scores
+        # 2, matmul(scores,v) -> (b,h,seq_len,d_k)
+        v = torch.matmul(scores, v)
+
+        return v # (b,h,seq_len,d_k)
 
 # 两层 全连接层：ln1 -> ReLU -> dropout -> ln2
 class FeedForward(nn.Module):
@@ -184,7 +190,10 @@ class FeedForward(nn.Module):
         x = self.fn2(x)
         return x
 
-# 3 encoder-layers: norm1->multi-head attention->dropout1 -> res-> norm2->feed-forward->dropout2
+"""
+-> norm1->multi-head attention->dropout1 -> res
+-> norm2->feed-forward->        dropout2
+"""
 class EncoderLayer(nn.Module):
     def __init__(self, d_model, heads, dropout=0.1):
         super().__init__()
@@ -215,9 +224,8 @@ class EncoderLayer(nn.Module):
 def get_clones(module, n_layers):
     return nn.ModuleList([copy.deepcopy(module) for i in range(n_layers)])
 
-"""token-embed -> position-embed -> encoderLayer -> norm"""
+"""token-embed -> position-embed -> encoderLayers -> norm"""
 class Encoder(nn.Module):
-    """包含了token-embedding, position-embedding, encoder-layers"""
     def __init__(self, vocab_size, d_model, n_layers, heads, dropout):
         super().__init__()
         self.token_embed = TokenEmbedding(vocab_size, d_model)
@@ -237,12 +245,44 @@ class Encoder(nn.Module):
         x = self.norm(x)
         return x  # (b,seq_len,d_model)
 
-class Decoder(nn.Module):
+class DecoderLayer(nn.Module):
     pass
 
-class Transformer(nn.Module):
-    def __init__(self, src_vocab_size, trg_vocab_size, d_model, n_layers, heads, dropout):
+"""token-embed -> position-embed -> decoderLayers -> norm"""
+class Decoder(nn.Module):
+    def __init__(self, vocab_size, d_model, n_layers, heads, dropout):
+        super().__init__()
+        self.embed = TokenEmbedding(vocab_size, d_model)
+        self.position_embed = PositionalEmbedding(d_model, 200, dropout)
+        self.layers = get_clones(DecoderLayer(d_model, heads, dropout), n_layers)
+        self.norm = FeatureNorm(d_model)
+
+    def forward(self, x):
         pass
+
+class Transformer(nn.Module):
+    """
+    encoder: (b,seq_len1) -> (b,seq_len1,d_model)
+    decoder: (b,seq_len2), (b,seq_len1,d_model) -> (b,seq_len2,d_model)
+    linear: (b,seq_len2,d_model) -> (b,seq_len2,trg_vocab_size)
+    """
+    def __init__(self, src_vocab_size, trg_vocab_size, d_model, n_layers, heads, dropout):
+        super().__init__()
+
+        # check params
+        assert d_model % heads == 0
+        assert dropout < 1
+
+        self.encoder = Encoder(src_vocab_size, d_model, n_layers, heads, dropout)
+        self.decoder = Decoder(trg_vocab_size, d_model, n_layers, heads, dropout)
+        self.fn = nn.Linear(d_model, trg_vocab_size)
+
+        self._init_weights_()
+
+    def forward(self, src, trg, src_mask, trg_mask):
+        encoder_output = self.encoder(src, src_mask)
+        decoder_output = self.decoder(trg, encoder_output, encoder_output, trg_mask)
+
 
 
 if __name__ == '__main__':
@@ -280,7 +320,8 @@ if __name__ == '__main__':
     # 测试encoder
     encoder = Encoder(src_vocab_size, d_model, n_layers, heads, dropout)
     encoder.cuda()
+    print("input: ", src.shape)
     encoder_output = encoder(src, src_mask)
-    print(encoder_output.shape)
+    print("output: ", encoder_output.shape)
 
-
+    # 测试decoder

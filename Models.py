@@ -8,7 +8,7 @@ import copy
 def get_clones(module, n_layers):
     return nn.ModuleList([copy.deepcopy(module) for i in range(n_layers)])
 
-"""token-embed -> position-embed -> encoderLayer -> norm"""
+"""token-embed -> position-embed -> encoderLayers -> norm"""
 class Encoder(nn.Module):
     def __init__(self, vocab_size, d_model, n_layers, heads, dropout):
         """
@@ -43,8 +43,17 @@ class Encoder(nn.Module):
         for i in range(self.n_layers):  # 串行encoder_layer
             x = self.layers[i](x, src_mask)
         return self.norm(x)
-    
+
+"""token-embed -> position-embed -> decoderLayers -> norm"""
 class Decoder(nn.Module):
+    """
+    vocab_size: int, 目标词表大小, 23469
+    d_model: int, 词嵌入维度, 512
+    n_layers: int, transformer中编码器层数和decoder层数, 6
+    heads: int, 多头注意力头个数, 8
+    dropout: float, dropout比率, 0.1
+
+    """
     def __init__(self, vocab_size, d_model, n_layers, heads, dropout):
         super().__init__()
         self.n_layers = n_layers
@@ -61,6 +70,11 @@ class Decoder(nn.Module):
 
 # encoder -> decoder -> fn
 class Transformer(nn.Module):
+    """
+    encoder: (b,seq_len1) -> (b,seq_len1,d_model)
+    decoder: (b,seq_len2), (b,seq_len1,d_model) -> (b,seq_len2,d_model)
+    Linear: (b,seq_len2,d_model) -> (b,seq_len2,vocab_size)
+    """
     def __init__(self, src_vocab_size, trg_vocab_size, d_model, n_layers, heads, dropout):
         super().__init__()
         assert d_model % heads == 0  # 嵌入向量维度必须能被head头数整除
@@ -69,6 +83,7 @@ class Transformer(nn.Module):
         self.encoder = Encoder(src_vocab_size, d_model, n_layers, heads, dropout)  #
         self.decoder = Decoder(trg_vocab_size, d_model, n_layers, heads, dropout)
         self.out = nn.Linear(d_model, trg_vocab_size)  # (b,seq_len2,d_model) -> (b,seq_len2,vocab_size)
+
         self._init_weights_()
 
     def forward(self, src, trg, src_mask, trg_mask):

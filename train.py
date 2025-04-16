@@ -37,12 +37,12 @@ def train_model(model, opt):
 
             # 输入原文src，前面翻译的词trg_input，还有对应的mask。得到预测结果。
             preds = model(src, trg_input, src_mask, trg_mask)  # preds.shape=(b, seq_len2-1, vocab_size)
-
-            ys = trg[:, 1:].contiguous().view(-1)  # ys代表预测的词，即翻译的词。 ys.shape=(b*(seq_len2-1),)=(1395,)
-            opt.optimizer.zero_grad()
+            preds = preds.view(-1, preds.size(-1))  # (b, seq_len2-1, vocab_size) -> (b*(seq_len2-1), vocab_size)
+            ys = trg[:, 1:].contiguous().view(-1)  # (b, seq_len2-1, vocab_size) -> (b*(seq_len2-1),). ys代表预测的词，即翻译的词。 ys.shape=
 
             # preds: (b*(seq_len2-1),vocab_size); ys.shape=(b*(seq_len2-1), )
-            loss = F.cross_entropy(preds.view(-1, preds.size(-1)), ys, ignore_index=opt.trg_pad)
+            loss = F.cross_entropy(preds, ys, ignore_index=opt.trg_pad)
+            opt.optimizer.zero_grad()
             loss.backward()
             opt.optimizer.step()
             if opt.SGDR == True: 
