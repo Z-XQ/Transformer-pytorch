@@ -59,15 +59,16 @@ class Decoder(nn.Module):
             x = self.layers[i](x, e_outputs, src_mask, trg_mask)
         return self.norm(x)
 
+# encoder -> decoder -> fn
 class Transformer(nn.Module):
     def __init__(self, src_vocab_size, trg_vocab_size, d_model, n_layers, heads, dropout):
         super().__init__()
         assert d_model % heads == 0  # 嵌入向量维度必须能被head头数整除
         assert dropout < 1
 
-        self.encoder = Encoder(src_vocab_size, d_model, n_layers, heads, dropout)
+        self.encoder = Encoder(src_vocab_size, d_model, n_layers, heads, dropout)  #
         self.decoder = Decoder(trg_vocab_size, d_model, n_layers, heads, dropout)
-        self.out = nn.Linear(d_model, trg_vocab_size)
+        self.out = nn.Linear(d_model, trg_vocab_size)  # (b,seq_len2,d_model) -> (b,seq_len2,vocab_size)
         self._init_weights_()
 
     def forward(self, src, trg, src_mask, trg_mask):

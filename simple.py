@@ -14,9 +14,9 @@ def lower_triangular_mask(seq_len):
     Returns: tensor. (1, seq_len, seq_len)
 
     """
-    np_mask = np.triu(np.ones(shape=(1, seq_len, seq_len)), k=1).astype('uint8')
-    np_mask = torch.from_numpy(np_mask == 0)
-    return np_mask
+    upper_mask = np.triu(np.ones(shape=(1, seq_len, seq_len)), k=1).astype('uint8')
+    lower_mask = torch.from_numpy(upper_mask == 0)
+    return lower_mask
 
 def create_masks(src, trg, padding_num=1):
     """
@@ -52,8 +52,8 @@ def create_masks(src, trg, padding_num=1):
 class FeatureNorm(nn.Module):
     def __init__(self, d_model, eps=1e-6):
         super().__init__()
-        self.alpha = nn.Parameter(torch.ones(size=d_model))  # 每个维度都有各自的权重
-        self.bias = nn.Parameter(torch.zeros(size=d_model))
+        self.alpha = nn.Parameter(torch.ones(size=(d_model,)))  # 每个维度都有各自的权重
+        self.bias = nn.Parameter(torch.zeros(size=(d_model,)))
         self.eps = eps
 
     def forward(self, x):
@@ -72,7 +72,7 @@ class TokenEmbedding(nn.Module):
     def forward(self, x):
         return self.embed(x)
 
-# 2 position-embedding: scale token-embedding -> position-embedding -> add -> dropout
+# 2 scale token-embedding -> position-embedding -> add -> dropout
 class PositionalEmbedding(nn.Module):
     def __init__(self, d_model, max_seq_len=200, dropout=0.1):
         super().__init__()
@@ -160,7 +160,7 @@ class MultiHeadAttention(nn.Module):
         # 屏蔽位置的分数设置为很小值，在后续的 softmax 操作中把这些位置的权重置为接近 0 的值，进而屏蔽掉这些位置。
         if src_mask is not None:
             mask = src_mask.unsqueeze(1)  #
-            scores = scores.mask_fill(mask == 0, -1e9)
+            scores = scores.masked_fill(mask == 0, -1e9)
             # scores_where = torch.where(mask == 0, -1e9, scores)
         scores = torch.softmax(scores, dim=-1)
 
@@ -169,8 +169,20 @@ class MultiHeadAttention(nn.Module):
 
         return scores
 
+# 两层 全连接层：ln1 -> ReLU -> dropout -> ln2
 class FeedForward(nn.Module):
-    pass
+    def __init__(self, d_model, hidden_dim=2048, dropout=0.1):
+        super().__init__()
+        self.fn1 = nn.Linear(d_model, hidden_dim)
+        self.relu = nn.ReLU()
+        self.dropout = nn.Dropout(dropout)
+
+        self.fn2 = nn.Linear(hidden_dim, d_model)
+
+    def forward(self, x):
+        x = self.dropout(self.relu(self.fn1(x)))
+        x = self.fn2(x)
+        return x
 
 # 3 encoder-layers: norm1->multi-head attention->dropout1 -> res-> norm2->feed-forward->dropout2
 class EncoderLayer(nn.Module):
@@ -209,7 +221,7 @@ class Encoder(nn.Module):
     def __init__(self, vocab_size, d_model, n_layers, heads, dropout):
         super().__init__()
         self.token_embed = TokenEmbedding(vocab_size, d_model)
-        self.position_embed = PositionalEmbedding(d_model)
+        self.position_embed = PositionalEmbedding(d_model, 200, dropout)
         self.layers = get_clones(EncoderLayer(d_model, heads, dropout), n_layers)
         self.norm = FeatureNorm(d_model)
 
@@ -256,13 +268,19 @@ if __name__ == '__main__':
     src_mask = src_mask.to(torch.device("cuda"))
     trg_mask = trg_mask.to(torch.device("cuda"))
 
-    # 测试TokenEmbedding和PositionalEmbedding功能
-    te = TokenEmbedding(src_vocab_size, d_model)
-    pe = PositionalEmbedding(d_model)
-    te.cuda()
-    pe.cuda()
-    test_token_embed = te(src)  # (b,seq_len) -> (b,seq_len,d_model)
-    test_position_embed = pe(test_token_embed)  # (b,seq_len,d_model)-> (b,seq_len,d_model)
-    print(test_position_embed.shape)
+    # # 测试TokenEmbedding和PositionalEmbedding功能
+    # te = TokenEmbedding(src_vocab_size, d_model)
+    # pe = PositionalEmbedding(d_model)
+    # te.cuda()
+    # pe.cuda()
+    # test_token_embed = te(src)  # (b,seq_len) -> (b,seq_len,d_model)
+    # test_position_embed = pe(test_token_embed)  # (b,seq_len,d_model)-> (b,seq_len,d_model)
+    # print(test_position_embed.shape)
+
+    # 测试encoder
+    encoder = Encoder(src_vocab_size, d_model, n_layers, heads, dropout)
+    encoder.cuda()
+    encoder_output = encoder(src, src_mask)
+    print(encoder_output.shape)
 
 

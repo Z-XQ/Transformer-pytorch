@@ -17,8 +17,8 @@ class Norm(nn.Module):
         self.size = d_model
         
         # create two learnable parameters to calibrate normalisation
-        self.alpha = nn.Parameter(torch.ones(self.size))  # (512,). 可学习的参数。# 每个维度都有各自的权重
-        self.bias = nn.Parameter(torch.zeros(self.size))
+        self.alpha = nn.Parameter(torch.ones(size=(self.size,)))  # (512,). 可学习的参数。# 每个维度都有各自的权重
+        self.bias = nn.Parameter(torch.zeros(size=(self.size,)))
         self.eps = eps
     
     def forward(self, x):  # x: (b,seq_len,d_model)
