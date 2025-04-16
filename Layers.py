@@ -64,9 +64,11 @@ class DecoderLayer(nn.Module):
         -------
 
         """
+        # 自注意力模块：屏蔽未来位置的信息和填充（padding）位置
         x2 = self.norm_1(x)
         x = x + self.dropout_1(self.attn_1(x2, x2, x2, trg_mask))  # (b,seq_len2,d_model)->(b,seq_len2,d_model)
 
+        # 外注意力模块：屏蔽源序列中的填充位置
         x2 = self.norm_2(x)
         x = x + self.dropout_2(self.attn_2(x2, e_outputs, e_outputs, src_mask))  # (b,seq_len2,d_model)->(b,seq_len2,d_model)
 

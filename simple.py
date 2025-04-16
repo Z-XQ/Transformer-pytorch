@@ -3,9 +3,8 @@ import math
 
 import torch
 import numpy as np
-from torch.distributions.constraints import lower_triangular
-from Batch import nopeak_mask
 import torch.nn as nn
+import torch.nn.functional as F
 
 def lower_triangular_mask(seq_len):
     """
@@ -245,8 +244,40 @@ class Encoder(nn.Module):
         x = self.norm(x)
         return x  # (b,seq_len,d_model)
 
+"""
+-> norm1 -> multi-head attention -> dropout1 -> res
+-> norm2 -> multi-head attention -> dropout2 -> res
+-> norm2 -> feedForward ->          dropout3 -> res
+"""
 class DecoderLayer(nn.Module):
-    pass
+    def __init__(self, d_model, heads, dropout=0.1):
+        super().__init__()
+        self.norm1 = FeatureNorm(d_model)
+        self.norm2 = FeatureNorm(d_model)
+        self.norm3 = FeatureNorm(d_model)
+
+        self.multi_attention = MultiHeadAttention(d_model, heads, dropout)
+        self.cross_multi_attention = MultiHeadAttention(d_model, heads, dropout)
+
+        self.dropout1 = nn.Dropout(dropout)
+        self.dropout2 = nn.Dropout(dropout)
+        self.dropout3 = nn.Dropout(dropout)
+
+        self.fn = FeedForward(d_model, dropout=dropout)
+
+    def forward(self, trg, e_outputs, src_mask, trg_mask):
+        tmp = self.norm1(trg)
+        tmp = self.dropout1(self.multi_attention(tmp, tmp, tmp, trg_mask))
+        trg = trg + tmp
+
+        tmp = self.norm2(trg)
+        tmp = self.dropout2(self.cross_multi_attention(tmp, e_outputs, e_outputs, src_mask))
+        trg = trg + tmp
+
+        tmp = self.norm3(trg)
+        tmp = self.dropout3(self.fn(tmp))
+        trg = trg + tmp
+        return trg
 
 """token-embed -> position-embed -> decoderLayers -> norm"""
 class Decoder(nn.Module):
@@ -257,8 +288,23 @@ class Decoder(nn.Module):
         self.layers = get_clones(DecoderLayer(d_model, heads, dropout), n_layers)
         self.norm = FeatureNorm(d_model)
 
-    def forward(self, x):
-        pass
+    def forward(self, trg, e_outputs, src_mask, trg_mask):
+        """
+        trg: (b, seq_len2). trg代表目标序列（trg_input）
+        e_outputs: (b,seq_len1,d_model). 编码特征
+        src_mask: (b,1,seq_len1). 屏蔽padding位置
+        trg_mask: (b,1,seq_len2,seq_len2). 遮住前面的词和填充（padding）部分。
+
+        Returns
+        -------
+
+        """
+        token_embed = self.embed(trg)
+        position_embed = self.position_embed(token_embed)
+        for layer in self.layers:
+            embed = layer(position_embed, e_outputs, src_mask, trg_mask)
+        embed = self.norm(embed)
+        return embed
 
 class Transformer(nn.Module):
     """
@@ -281,9 +327,13 @@ class Transformer(nn.Module):
 
     def forward(self, src, trg, src_mask, trg_mask):
         encoder_output = self.encoder(src, src_mask)
-        decoder_output = self.decoder(trg, encoder_output, encoder_output, trg_mask)
+        decoder_output = self.decoder(trg, encoder_output, src_mask, trg_mask)
+        return self.fn(decoder_output)
 
-
+    def _init_weights_(self):
+        for p in self.parameters():
+            if p.dim() > 1:  # 矩阵维度大于1，则初始化权重，用于跳过偏置向量等一维参数，只对二维及以上的权重矩阵进行Xavier初始化。
+                nn.init.xavier_uniform_(p)
 
 if __name__ == '__main__':
     src_vocab_size = 13724
@@ -301,12 +351,23 @@ if __name__ == '__main__':
 
     # 3, 初始化模型
     model = Transformer(src_vocab_size, trg_vocab_size, d_model, n_layers, heads, dropout)
+    model.to(torch.device("cuda"))
+    model.train()
 
     src = src.to(torch.device("cuda"))
     trg = trg.to(torch.device("cuda"))
     trg_input = trg_input.to(torch.device("cuda"))
     src_mask = src_mask.to(torch.device("cuda"))
     trg_mask = trg_mask.to(torch.device("cuda"))
+
+    pred = model(src, trg_input, src_mask, trg_mask)  # (b,seq_len2-1,trg_vocab_size)
+    pred = pred.view(-1, pred.size(-1))  # (b*(seq_len2-1),trg_vocab_size)
+
+    label = trg[:, 1:].contiguous().view(-1)  # (b*(seq_len2-1),)
+    print("input: ", pred.shape)
+    print("label: ", label.shape)
+
+    loss = F.cross_entropy(pred, label, ignore_index=1)
 
     # # 测试TokenEmbedding和PositionalEmbedding功能
     # te = TokenEmbedding(src_vocab_size, d_model)
@@ -317,11 +378,16 @@ if __name__ == '__main__':
     # test_position_embed = pe(test_token_embed)  # (b,seq_len,d_model)-> (b,seq_len,d_model)
     # print(test_position_embed.shape)
 
-    # 测试encoder
-    encoder = Encoder(src_vocab_size, d_model, n_layers, heads, dropout)
-    encoder.cuda()
-    print("input: ", src.shape)
-    encoder_output = encoder(src, src_mask)
-    print("output: ", encoder_output.shape)
-
-    # 测试decoder
+    # # 测试encoder
+    # encoder = Encoder(src_vocab_size, d_model, n_layers, heads, dropout)
+    # encoder.cuda()
+    # print("input: ", src.shape)
+    # encoder_output = encoder(src, src_mask)
+    # print("output: ", encoder_output.shape)
+    #
+    # # 测试decoder
+    # decoder = Decoder(trg_vocab_size, d_model, n_layers, heads, dropout)
+    # decoder.cuda()
+    # print("input: ", trg_input.shape)
+    # decoder_output = decoder(trg_input, encoder_output, src_mask, trg_mask)
+    # print("output: ", decoder_output.shape)
