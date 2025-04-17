@@ -10,8 +10,8 @@ def init_vars(src, model, SRC, TRG, opt):
     src_mask = (src != SRC.vocab.stoi['<pad>']).unsqueeze(-2)
     e_output = model.encoder(src, src_mask)
     
-    outputs = torch.LongTensor([[init_tok]], device=opt.device)
-
+    # outputs = torch.LongTensor([[init_tok]], device=torch.device(opt.device))
+    outputs = torch.LongTensor([[init_tok]]).to(torch.device(opt.device))
     trg_mask = nopeak_mask(1, opt)
     
     out = model.out(model.decoder(outputs,

@@ -41,8 +41,8 @@ def translate_sentence(sentence, model, opt, SRC, TRG):
             indexed.append(SRC.vocab.stoi[tok])
         else:
             indexed.append(get_synonym(tok, SRC))
-    sentence = Variable(torch.LongTensor([indexed]), device=opt.device)
-
+    # sentence = Variable(torch.LongTensor([indexed]), device=opt.device)
+    sentence = torch.LongTensor([indexed]).to(torch.device(opt.device))
     sentence = beam_search(sentence, model, SRC, TRG, opt)
 
     return multiple_replace({' ?': '?', ' !': '!', ' .': '.', '\' ': '\'', ' ,': ','}, sentence)

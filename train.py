@@ -8,6 +8,9 @@ from Optim import CosineWithRestarts
 from Batch import create_masks
 import dill as pickle
 
+from simple import Transformer
+
+
 def train_model(model, opt):
     print("training model...")
     model.train()
@@ -108,7 +111,16 @@ def main():
     opt.train_dataset_iter = create_dataset(opt, SRC, TRG)
 
     # 4, 创建model：创建transformer模型
-    model = get_model(opt, len(SRC.vocab), len(TRG.vocab))
+    # model = get_model(opt, len(SRC.vocab), len(TRG.vocab))
+    model = Transformer(
+        src_vocab_size=len(SRC.vocab),
+        trg_vocab_size=len(TRG.vocab),
+        d_model=opt.d_model,
+        n_layers=opt.n_layers,
+        heads=opt.heads,
+        dropout=opt.dropout
+    )
+    model.to(torch.device(opt.device))
 
     opt.optimizer = torch.optim.Adam(model.parameters(), lr=opt.lr, betas=(0.9, 0.98), eps=1e-9)
     if opt.SGDR == True:

@@ -123,9 +123,10 @@ class MultiHeadAttention(nn.Module):
 
     def forward(self, q, k, v, src_mask):
         """
-        q, k, v: (b, seq_len, d_model);
-        src_mask: (b,1,seq_len). 用于处理源序列（src）中的填充（padding）部分。
-        return: (b,seq_len,d_model)"""
+        q: (b, seq_len1, d_model);
+        k, v: (b, seq_len2, d_model);
+        src_mask: (b,1,seq_len2). 用于处理源序列（src）中的填充（padding）部分。
+        return: (b,seq_len1,d_model)"""
 
         # 1, fn+split: (b, seq_len, d_model) -> # (b, seq_len, heads, d_k)
         b = q.size(0)
@@ -134,29 +135,29 @@ class MultiHeadAttention(nn.Module):
         v = self.fn3(v).view(b, -1, self.heads, self.d_k)
 
         # 2, transpose: (b, seq_len, heads, d_k) -> (b, heads, seq_len, d_k)
-        q = q.transpose(1, 2)
-        k = k.transpose(1, 2)
+        q = q.transpose(1, 2)  # (b, heads, seq_len1, d_k)
+        k = k.transpose(1, 2)  # (b, heads, seq_len2, d_k)
         v = v.transpose(1, 2)
 
-        # 3, attention: (b, heads, seq_len, d_k) -> (b, heads, seq_len, d_k)
-        scores = self.multi_attention(q, k, v, src_mask)
+        # 3, attention
+        scores = self.multi_attention(q, k, v, src_mask)  #  (b,h,seq_len1,d_k)
 
-        # 4, concat: (b, heads, seq_len, d_k) -> (b, seq_len, heads * d_k)
+        # 4, concat: (b, heads, seq_len1, d_k) -> (b, seq_len1, heads * d_k)
         scores = scores.transpose(1, 2).contiguous().view(b, -1, self.d_k * self.heads)
 
         # 5, output
-        return self.fn(scores)
+        return self.fn(scores)  # (b, seq_len1, d_model)
 
     def multi_attention(self, q, k, v, src_mask):
         """
-        q, k, v: (b,heads,seq_len,d_k)
-        src_mask: (b,1,seq_len). 用于处理源序列（src）中的填充（padding）部分。
-        return: (b,heads,seq_len,d_k)
+        q:  (b,h,seq_len1,d_k);
+        k,v: (b,h,seq_len2,d_k);
+        mask: (b,1,seq_len2)
+        return: (b,h,seq_len1,d_k)
 
-        1, matmul(q,k^T) scale  -> scores(b,h,seq_len,seq_len) -> mask -> softmax最后维度 -> dropout -> (b,h,seq_len,seq_len)
-        2, -> matmul(scores,v) -> (b,h,seq_len,d_k)
+        q*k^T -> mask -> softmax -> dropout -> scores * v
         """
-        # 1, matmul(q,k^T) scale -> scores(b,h,seq_len,seq_len) -> mask -> softmax最后维度 -> (b,h,seq_len,seq_len)
+        #  (b,h,seq_len1,d_k) * (b,h,d_k,seq_len2)  -> (b,h,seq_len1,seq_len2)
         # 可以将点积结果的量级进行缩放，使其保持在一个合理的范围内。这样，softmax 函数的输入不会过大，输出的概率分布在中间区域，避免了梯度消失或爆炸问题，同时也提高了模型的学习效率和稳定性。
         scores = torch.matmul(q, k.transpose(-1, -2)) / math.sqrt(self.d_k)
 
@@ -169,13 +170,17 @@ class MultiHeadAttention(nn.Module):
 
         scores = self.dropout(scores)
 
-        # 2, matmul(scores,v) -> (b,h,seq_len,d_k)
+        # 2, (b,h,seq_len1,seq_len2) * (b,h,seq_len2,d_k) -> (b,h,seq_len1,d_k)
         v = torch.matmul(scores, v)
 
-        return v # (b,h,seq_len,d_k)
+        return v
 
 # 两层 全连接层：ln1 -> ReLU -> dropout -> ln2
 class FeedForward(nn.Module):
+    """
+    linear -> relue -> dropout: 第一层扩展维度引入非线性
+    linear: 第二层恢复原始维度保持网络深度
+    """
     def __init__(self, d_model, hidden_dim=2048, dropout=0.1):
         super().__init__()
         self.fn1 = nn.Linear(d_model, hidden_dim)
@@ -225,6 +230,12 @@ def get_clones(module, n_layers):
 
 """token-embed -> position-embed -> encoderLayers -> norm"""
 class Encoder(nn.Module):
+    """
+        token-embedding: (b,seq_len) -> (b,seq_len,d_model)
+        position-embedding: (b,seq_len,d_model) -> (b,seq_len,d_model)
+        encoderLayers: (b,seq_len,d_model) -> (b,seq_len,d_model)
+        norm: featureNorm
+    """
     def __init__(self, vocab_size, d_model, n_layers, heads, dropout):
         super().__init__()
         self.token_embed = TokenEmbedding(vocab_size, d_model)
@@ -265,19 +276,31 @@ class DecoderLayer(nn.Module):
 
         self.fn = FeedForward(d_model, dropout=dropout)
 
-    def forward(self, trg, e_outputs, src_mask, trg_mask):
-        tmp = self.norm1(trg)
+    def forward(self, trg_embed, e_outputs, src_mask, trg_mask):
+        """
+        x: trg-embed, (b,seq_len2,d_model)
+        e_outputs: (b,seq_len1,d_model)
+        src_mask: (b,1,seq_len1)
+        trg_mask: (b,1,seq_len2)
+
+        Returns
+        -------
+
+        """
+        # 1, trg_embed(b,seq_len2,d_model) trg_mask(b,1,seq_len2) -> (b,seq_len2,d_model)
+        tmp = self.norm1(trg_embed)
         tmp = self.dropout1(self.multi_attention(tmp, tmp, tmp, trg_mask))
-        trg = trg + tmp
+        trg_embed = trg_embed + tmp
 
-        tmp = self.norm2(trg)
+        # 2, trg_embed(b,seq_len2,d_model) src_mask(b,1,seq_len1) -> (b,seq_len2,d_model)
+        tmp = self.norm2(trg_embed)
         tmp = self.dropout2(self.cross_multi_attention(tmp, e_outputs, e_outputs, src_mask))
-        trg = trg + tmp
+        trg_embed = trg_embed + tmp
 
-        tmp = self.norm3(trg)
+        tmp = self.norm3(trg_embed)
         tmp = self.dropout3(self.fn(tmp))
-        trg = trg + tmp
-        return trg
+        trg_embed = trg_embed + tmp
+        return trg_embed
 
 """token-embed -> position-embed -> decoderLayers -> norm"""
 class Decoder(nn.Module):
@@ -288,9 +311,9 @@ class Decoder(nn.Module):
         self.layers = get_clones(DecoderLayer(d_model, heads, dropout), n_layers)
         self.norm = FeatureNorm(d_model)
 
-    def forward(self, trg, e_outputs, src_mask, trg_mask):
+    def forward(self, trg_input, e_outputs, src_mask, trg_mask):
         """
-        trg: (b, seq_len2). trg代表目标序列（trg_input）
+        trg_input: (b, seq_len2). trg_input代表前面词序列，据此预测后面词
         e_outputs: (b,seq_len1,d_model). 编码特征
         src_mask: (b,1,seq_len1). 屏蔽padding位置
         trg_mask: (b,1,seq_len2,seq_len2). 遮住前面的词和填充（padding）部分。
@@ -299,10 +322,15 @@ class Decoder(nn.Module):
         -------
 
         """
-        token_embed = self.embed(trg)
-        position_embed = self.position_embed(token_embed)
+        # 1 (b,seq_len2) -> (b,seq_len2,d_model)
+        token_embed = self.embed(trg_input)
+
+        # 2 (b,seq_len2,d_model)
+        embed = self.position_embed(token_embed)
+
+        # 3 (b,seq_len2,d_model)
         for layer in self.layers:
-            embed = layer(position_embed, e_outputs, src_mask, trg_mask)
+            embed = layer(embed, e_outputs, src_mask, trg_mask)
         embed = self.norm(embed)
         return embed
 
@@ -325,10 +353,13 @@ class Transformer(nn.Module):
 
         self._init_weights_()
 
-    def forward(self, src, trg, src_mask, trg_mask):
-        encoder_output = self.encoder(src, src_mask)
-        decoder_output = self.decoder(trg, encoder_output, src_mask, trg_mask)
-        return self.fn(decoder_output)
+    def forward(self, src_input, trg_input, src_mask, trg_mask):
+        # 1 (b,seq_len1) -> (b,seq_len1,d_model)
+        encoder_output = self.encoder(src_input, src_mask)
+
+        # 2 (b,seq_len2), (b,seq_len1,d_model) -> (b,seq_len2,d_model)
+        decoder_output = self.decoder(trg_input, encoder_output, src_mask, trg_mask)
+        return self.fn(decoder_output)  # (b,seq_len2,d_model) -> (b,seq_len2,trg_vocab_size)
 
     def _init_weights_(self):
         for p in self.parameters():
@@ -343,27 +374,30 @@ if __name__ == '__main__':
     dropout = 0.1
     n_layers = 6
     # 1, get input data
-    src = torch.randint(0, src_vocab_size, (65, 17))  # 原文
+    src_input = torch.randint(0, src_vocab_size, (65, 17))  # 原文
     trg = torch.randint(0, trg_vocab_size, (65, 23))  # 翻译
-    trg_input = trg[:, :-1]  # (65,22) 翻译的词，去掉最后一个词，因为最后一个词是<eos>，我们不需要预测<eos>。
+    trg_input = trg[:, :-1]  # (65,22) 翻译的词，去掉最后一个词，作为模型的输入
+    label = trg[:, 1:].contiguous()  # (65,22) 翻译的词，去掉第一个词，作为模型的标签。这样trg_input和label一一对应。
+
     # 2, 掩码
-    src_mask, trg_mask = create_masks(src, trg_input, padding_num=1)  # (b,1,seq_len1), (b,seq_len2,seq_len2)
+    src_mask, trg_mask = create_masks(src_input, trg_input, padding_num=1)  # (b,1,seq_len1), (b,seq_len2,seq_len2)
 
     # 3, 初始化模型
     model = Transformer(src_vocab_size, trg_vocab_size, d_model, n_layers, heads, dropout)
     model.to(torch.device("cuda"))
     model.train()
 
-    src = src.to(torch.device("cuda"))
+    src_input = src_input.to(torch.device("cuda"))
     trg = trg.to(torch.device("cuda"))
     trg_input = trg_input.to(torch.device("cuda"))
+    label = label.to(torch.device("cuda"))
     src_mask = src_mask.to(torch.device("cuda"))
     trg_mask = trg_mask.to(torch.device("cuda"))
 
-    pred = model(src, trg_input, src_mask, trg_mask)  # (b,seq_len2-1,trg_vocab_size)
+    pred = model(src_input, trg_input, src_mask, trg_mask)  # (b,seq_len2-1,trg_vocab_size)
     pred = pred.view(-1, pred.size(-1))  # (b*(seq_len2-1),trg_vocab_size)
 
-    label = trg[:, 1:].contiguous().view(-1)  # (b*(seq_len2-1),)
+    label = label.view(-1)  # (b*(seq_len2-1),)
     print("input: ", pred.shape)
     print("label: ", label.shape)
 
